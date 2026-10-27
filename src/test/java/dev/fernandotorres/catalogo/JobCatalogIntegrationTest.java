@@ -4,6 +4,7 @@ import dev.fernandotorres.catalogo.api.CursorPageResponse;
 import dev.fernandotorres.catalogo.api.JobDetails;
 import dev.fernandotorres.catalogo.api.JobListItem;
 import dev.fernandotorres.catalogo.api.PageResponse;
+import dev.fernandotorres.catalogo.api.CandidateSessionResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -55,6 +57,9 @@ class JobCatalogIntegrationTest {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @DynamicPropertySource
     static void configureServices(DynamicPropertyRegistry properties) {
         properties.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -67,7 +72,7 @@ class JobCatalogIntegrationTest {
     @BeforeEach
     void resetDatabaseAndCache() {
         try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
-            statement.execute("TRUNCATE TABLE job_postings RESTART IDENTITY CASCADE");
+            statement.execute("TRUNCATE TABLE job_postings, candidate_accounts RESTART IDENTITY CASCADE");
         } catch (Exception exception) {
             throw new IllegalStateException("Não foi possível preparar o banco de teste", exception);
         }
@@ -148,6 +153,51 @@ class JobCatalogIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().technologies()).containsExactly("Java", "PostgreSQL", "REST", "Spring Boot");
+        assertThat(response.getBody().applicationUrl()).isNull();
+    }
+
+    @Test
+    void registersCandidateWithHashedPasswordAndAllowsIdempotentApplicationReport() {
+        Map<String, String> csrf = getCsrf();
+        HttpHeaders registerHeaders = csrfHeaders(csrf);
+        var registration = rest.exchange("/api/v1/auth/register", HttpMethod.POST,
+                new HttpEntity<>(Map.of("fullName", "Candidato Teste", "email", "teste@example.com",
+                        "password", "senha-segura-123"), registerHeaders), Void.class);
+
+        assertThat(registration.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        String storedHash = jdbcTemplate.queryForObject(
+                "SELECT password_hash FROM candidate_accounts WHERE email = ?", String.class, "teste@example.com");
+        assertThat(storedHash).isNotEqualTo("senha-segura-123").startsWith("$2");
+
+        var login = rest.exchange("/api/v1/auth/login", HttpMethod.POST,
+                new HttpEntity<>(Map.of("email", "teste@example.com", "password", "senha-segura-123"), registerHeaders),
+                CandidateSessionResponse.class);
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login.getBody()).isNotNull();
+        assertThat(login.getBody().authenticated()).isTrue();
+
+        String sessionCookie = login.getHeaders().get(HttpHeaders.SET_COOKIE).stream()
+                .filter(cookie -> cookie.startsWith("JSESSIONID="))
+                .findFirst().orElseThrow().split(";", 2)[0];
+        Map<String, String> freshCsrf = getCsrf();
+        HttpHeaders authHeaders = csrfHeaders(freshCsrf);
+        authHeaders.set(HttpHeaders.COOKIE, authHeaders.getFirst(HttpHeaders.COOKIE) + "; " + sessionCookie);
+        var firstReport = rest.exchange("/api/v1/jobs/1/applications", HttpMethod.POST,
+                new HttpEntity<>(Map.of(), authHeaders), Map.class);
+        var duplicateReport = rest.exchange("/api/v1/jobs/1/applications", HttpMethod.POST,
+                new HttpEntity<>(Map.of(), authHeaders), Map.class);
+
+        assertThat(firstReport.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(duplicateReport.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(((Number) duplicateReport.getBody().get("selfReportedApplications")).longValue()).isEqualTo(1);
+        assertThat(duplicateReport.getBody().get("reportedByCurrentUser")).isEqualTo(true);
+    }
+
+    @Test
+    void rejectsNonHttpsApplicationUrls() {
+        Map<String, Object> invalid = new java.util.HashMap<>(job("Unsafe Link"));
+        invalid.put("applicationUrl", "http://example.org/apply");
+        assertThat(postAdmin(invalid).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
@@ -235,6 +285,22 @@ class JobCatalogIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("X-Admin-Key", "integration-test-key");
+        return headers;
+    }
+
+    private Map<String, String> getCsrf() {
+        ResponseEntity<Map> response = rest.getForEntity("/api/v1/auth/csrf", Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return Map.of("headerName", String.valueOf(response.getBody().get("headerName")),
+                "token", String.valueOf(response.getBody().get("token")),
+                "cookie", response.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0]);
+    }
+
+    private HttpHeaders csrfHeaders(Map<String, String> csrf) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set(csrf.get("headerName"), csrf.get("token"));
+        headers.set(HttpHeaders.COOKIE, csrf.get("cookie"));
         return headers;
     }
 

@@ -4,6 +4,11 @@
   const $ = (selector) => document.querySelector(selector);
   const list = $('#job-list');
   let searchTimer;
+  let authUser = null;
+  let authMode = 'login';
+  let pendingApplicationJobId = null;
+  let currentDetailJobId = null;
+  let currentApplicationUrl = null;
 
   const text = (value) => String(value ?? '');
   const escapeHtml = (value) => text(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -23,6 +28,55 @@
     contracts: { CLT: 'CLT', PJ: 'Pessoa jurídica', INTERN: 'Estágio', OTHER: 'Outro' }
   };
   const locationLabel = (job) => [job.city, job.state].filter(Boolean).join(', ') || 'Localidade não informada';
+  const csrf = async () => {
+    const response = await fetch('/api/v1/auth/csrf', { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('Não foi possível preparar a sessão segura.');
+    return response.json();
+  };
+  const sendJson = async (url, body) => {
+    const token = await csrf();
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', [token.headerName]: token.token }, body: JSON.stringify(body) });
+  };
+  function updateAuthUI() {
+    $('#auth-open').hidden = Boolean(authUser);
+    $('#account-label').hidden = !authUser;
+    $('#logout-button').hidden = !authUser;
+    $('#account-label').textContent = authUser ? `Olá, ${authUser.fullName.split(' ')[0]}` : '';
+  }
+  async function loadAuth() {
+    try {
+      const response = await fetch('/api/v1/auth/me', { headers: { Accept: 'application/json' } });
+      if (response.ok) { const result = await response.json(); authUser = result.authenticated ? result : null; }
+    } catch (_) { authUser = null; }
+    updateAuthUI();
+  }
+  function openAuth(mode = 'login', pendingJobId = null) {
+    authMode = mode;
+    pendingApplicationJobId = pendingJobId;
+    $('#auth-title').textContent = mode === 'register' ? 'Crie sua conta' : 'Entre na sua conta';
+    $('#auth-name-wrap').hidden = mode !== 'register';
+    $('#auth-name').required = mode === 'register';
+    $('#auth-password').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+    $('#auth-submit').textContent = mode === 'register' ? 'Criar conta' : 'Entrar';
+    $('#auth-switch').textContent = mode === 'register' ? 'Já tem conta? Entrar' : 'Ainda não tem conta? Criar uma';
+    $('#auth-message').textContent = '';
+    $('#auth-backdrop').hidden = false;
+    $('#auth-email').focus();
+  }
+  function closeAuth() { $('#auth-backdrop').hidden = true; }
+  async function reportApplication(jobId) {
+    if (!authUser) { openAuth('login', jobId); return; }
+    const button = document.querySelector('#report-application');
+    if (button) button.disabled = true;
+    try {
+      const response = await sendJson(`/api/v1/jobs/${encodeURIComponent(jobId)}/applications`, {});
+      if (!response.ok) throw new Error(response.status === 401 ? 'Sua sessão expirou. Entre novamente.' : 'Não foi possível registrar agora.');
+      const stats = await response.json();
+      showToast('Candidatura informada. Obrigado por atualizar!');
+      renderEngagement(jobId, stats, currentApplicationUrl);
+    } catch (error) { showToast(error.message); }
+    finally { if (button) button.disabled = false; }
+  }
   const salaryLabel = (job) => {
     if (job.salaryMin == null && job.salaryMax == null) return 'Faixa não divulgada';
     if (job.salaryMin != null && job.salaryMax != null) return `${currency(job.salaryMin)} – ${currency(job.salaryMax)}`;
@@ -165,6 +219,7 @@
   }
 
   function openDetails(id) {
+    currentDetailJobId = String(id);
     $('#detail-backdrop').hidden = false;
     const panel = $('#detail-panel');
     panel.classList.add('open');
@@ -177,7 +232,9 @@
       .catch((error) => { $('#detail-content').innerHTML = `<p class="detail-kicker">OPA, ALGO MUDOU</p><h2>Não deu para abrir essa vaga.</h2><div class="detail-section"><p>${escapeHtml(error.message)}</p></div>`; });
   }
 
-  function renderDetails(job) {
+  async function renderDetails(job) {
+    if (String(job.id) !== currentDetailJobId) return;
+    currentApplicationUrl = job.applicationUrl || null;
     const contract = labels.contracts[job.contractType] || job.contractType || 'A combinar';
     const mode = labels.modes[job.workMode] || 'A combinar';
     const technologies = Array.isArray(job.technologies) && job.technologies.length
@@ -187,7 +244,28 @@
       <div class="detail-tags"><span class="job-tag">${escapeHtml(contract)}</span><span class="job-tag mode">${escapeHtml(mode)}</span><span class="job-tag salary">${escapeHtml(salaryLabel(job))}</span></div>
       <section class="detail-section"><h3>Sobre a oportunidade</h3><p>${escapeHtml(job.description || job.summary || 'Descrição não informada.')}</p></section>
       <section class="detail-section"><h3>Conhecimentos</h3>${technologies}</section>
-      <div class="detail-meta"><div><span>LOCALIDADE</span><strong>${escapeHtml(locationLabel(job))}</strong></div><div><span>PUBLICADA</span><strong>${escapeHtml(dateLabel(job.publishedAt))}</strong></div></div>`;
+      <div class="detail-meta"><div><span>LOCALIDADE</span><strong>${escapeHtml(locationLabel(job))}</strong></div><div><span>PUBLICADA</span><strong>${escapeHtml(dateLabel(job.publishedAt))}</strong></div></div>
+      <section id="engagement-area" class="engagement-box"><p class="detail-kicker">INTERESSE NESTA VAGA</p><div class="engagement-counts"><div><strong>—</strong><span>cliques em candidatar</span></div><div><strong>—</strong><span>candidaturas informadas</span></div></div><p class="apply-unavailable">Carregando informações…</p></section>`;
+    fetch(`/api/v1/jobs/${encodeURIComponent(job.id)}/engagement`, { headers: { Accept: 'application/json' } })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Não foi possível carregar as informações.')))
+      .then((stats) => { if (String(job.id) === currentDetailJobId) renderEngagement(job.id, stats, job.applicationUrl); })
+      .catch(() => {});
+  }
+
+  function renderEngagement(jobId, stats, applicationUrl) {
+    const area = $('#engagement-area');
+    if (!area) return;
+    const clicks = Number(stats.applyClicks || 0);
+    const reported = Number(stats.selfReportedApplications || 0);
+    area.innerHTML = `<p class="detail-kicker">INTERESSE NESTA VAGA</p><div class="engagement-counts"><div><strong>${clicks.toLocaleString('pt-BR')}</strong><span>cliques em candidatar</span></div><div><strong>${reported.toLocaleString('pt-BR')}</strong><span>candidaturas informadas</span></div></div>${applicationUrl ? '' : '<p class="apply-unavailable">O link de candidatura ainda não foi informado.</p>'}<div class="apply-actions">${applicationUrl ? `<a class="apply-link" href="/api/v1/jobs/${encodeURIComponent(jobId)}/apply" target="_blank" rel="noopener noreferrer">Ir para candidatura ↗</a>` : ''}<button id="report-application" class="report-button" type="button" ${stats.reportedByCurrentUser ? 'disabled' : ''}>${stats.reportedByCurrentUser ? 'Você já informou' : 'Já me candidatei'}</button></div><p class="apply-unavailable">As candidaturas são informadas pelos próprios candidatos.</p>`;
+    $('#report-application').addEventListener('click', () => reportApplication(jobId));
+  }
+
+  function showToast(message) {
+    const toast = $('#toast');
+    toast.textContent = message;
+    toast.classList.add('show');
+    window.setTimeout(() => toast.classList.remove('show'), 2800);
   }
 
   function closeDetails() {
@@ -222,6 +300,47 @@
   $('#next-page').addEventListener('click', () => { if (state.page + 1 < state.totalPages) { state.page += 1; loadJobs(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
   $('#detail-close').addEventListener('click', closeDetails);
   $('#detail-backdrop').addEventListener('click', closeDetails);
+  $('#auth-open').addEventListener('click', () => openAuth());
+  $('#auth-close').addEventListener('click', closeAuth);
+  $('#auth-backdrop').addEventListener('click', (event) => { if (event.target === $('#auth-backdrop')) closeAuth(); });
+  $('#auth-switch').addEventListener('click', () => openAuth(authMode === 'login' ? 'register' : 'login', pendingApplicationJobId));
+  $('#auth-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const message = $('#auth-message');
+    const credentials = { email: $('#auth-email').value.trim(), password: $('#auth-password').value };
+    try {
+      if (authMode === 'register') {
+        const registered = await sendJson('/api/v1/auth/register', { ...credentials, fullName: $('#auth-name').value.trim() });
+        if (!registered.ok) throw new Error(registered.status === 409 ? 'Este e-mail já possui cadastro.' : 'Confira os dados e tente novamente.');
+        authMode = 'login';
+        $('#auth-title').textContent = 'Conta criada';
+        $('#auth-name-wrap').hidden = true;
+        $('#auth-submit').textContent = 'Entrar';
+        $('#auth-switch').textContent = 'Ainda não tem conta? Criar uma';
+        message.style.color = '#247b62';
+        message.textContent = 'Cadastro concluído. Entre com seu e-mail e senha.';
+        $('#auth-password').value = '';
+        return;
+      }
+      const response = await sendJson('/api/v1/auth/login', credentials);
+      if (!response.ok) throw new Error(response.status === 401 ? 'E-mail ou senha inválidos.' : 'Não foi possível entrar agora.');
+      authUser = await response.json();
+      updateAuthUI();
+      const pendingId = pendingApplicationJobId;
+      pendingApplicationJobId = null;
+      closeAuth();
+      if (pendingId) await reportApplication(pendingId);
+      else if (document.querySelector('#engagement-area')) {
+        const id = document.querySelector('.detail-kicker').textContent.match(/#(\d+)/)?.[1];
+        if (id) fetch(`/api/v1/jobs/${id}/engagement`).then((r) => r.json()).then((stats) => renderEngagement(id, stats, currentApplicationUrl));
+      }
+    } catch (error) { message.style.color = ''; message.textContent = error.message; }
+  });
+  $('#logout-button').addEventListener('click', async () => {
+    const token = await csrf();
+    const response = await fetch('/api/v1/auth/logout', { method: 'POST', headers: { [token.headerName]: token.token } });
+    if (response.ok) { authUser = null; updateAuthUI(); showToast('Você saiu da sua conta.'); }
+  });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDetails(); });
   window.addEventListener('popstate', () => {
     const params = new URLSearchParams(location.search);
@@ -238,6 +357,7 @@
   });
 
   setDate();
+  loadAuth();
   const initial = new URLSearchParams(location.search);
   $('#search-input').value = initial.get('q') || '';
   $('#contract-filter').value = initial.get('contractType') || '';

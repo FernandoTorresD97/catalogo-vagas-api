@@ -9,6 +9,7 @@ API REST em Java para consultar e administrar vagas publicadas, com filtros comb
 - Spring Web, Validation e Data JPA
 - PostgreSQL 17, Redis 7 e Flyway
 - Spring Boot Actuator para métricas HTTP
+- Spring Security com sessão de candidato e senha BCrypt
 - Swagger UI / OpenAPI
 
 ## Executar
@@ -36,12 +37,19 @@ java -jar .\target\catalogo-vagas-api-0.1.0-SNAPSHOT.jar
 - `GET /api/v1/jobs` — lista vagas ativas com filtros opcionais.
 - `GET /api/v1/jobs/scroll` — percorre vagas por cursor, sem calcular a contagem total.
 - `GET /api/v1/jobs/{id}` — retorna os detalhes de uma vaga.
+- `GET /api/v1/jobs/{id}/engagement` — retorna cliques no redirecionamento e candidaturas informadas por candidatos.
+- `GET /api/v1/jobs/{id}/apply` — registra o clique e redireciona para o link externo HTTPS da vaga.
+- `POST /api/v1/jobs/{id}/applications` — registra, uma única vez por conta, que o candidato informou ter se candidatado.
+- `POST /api/v1/auth/register` e `POST /api/v1/auth/login` — cadastro e início de sessão de candidato.
+- `GET /api/v1/auth/me` e `POST /api/v1/auth/logout` — consulta e encerramento da sessão atual.
 - `POST /api/v1/admin/jobs` — publica uma vaga (requer `X-Admin-Key`).
 - `PUT /api/v1/admin/jobs/{id}` — atualiza uma vaga (requer `X-Admin-Key`).
 - `PATCH /api/v1/admin/jobs/{id}/deactivate` — desativa uma vaga (requer `X-Admin-Key`).
 - `GET /swagger-ui.html` — interface da documentação OpenAPI.
 - `GET /v3/api-docs` — contrato OpenAPI em JSON.
 - `GET /actuator/metrics/http.server.requests` — métricas de duração e volume das requisições HTTP.
+
+O painel permite criar conta e entrar para informar uma candidatura. Essa informação é autodeclarada: como o formulário da empresa fica fora do catálogo, ela não confirma que a candidatura externa foi recebida. Os cliques contam os acessos ao redirecionamento do catálogo. As vagas de demonstração não trazem links externos; informe `applicationUrl` ao publicar ou atualizar uma vaga pelo endpoint administrativo para habilitar o botão. Apenas URLs HTTPS válidas são aceitas. Sessões do navegador usam cookie e as alterações protegidas exigem token CSRF obtido em `GET /api/v1/auth/csrf`.
 
 ## Testes automatizados
 
