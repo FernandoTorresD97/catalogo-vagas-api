@@ -8,6 +8,7 @@ import dev.fernandotorres.catalogo.domain.CandidateAccount;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -102,6 +103,7 @@ public class JobCatalogController {
 
     @PostMapping("/{id}/applications")
     @Operation(summary = "Informa que o candidato já se candidatou à vaga")
+    @SecurityRequirement(name = "CandidateSession")
     public JobEngagementResponse reportApplication(@PathVariable @Min(1) long id,
                                                   @AuthenticationPrincipal CandidateAccount candidate) {
         return engagement.reportApplication(id, candidate.getUsername());

@@ -4,6 +4,7 @@ import dev.fernandotorres.catalogo.domain.CandidateAccount;
 import dev.fernandotorres.catalogo.service.CandidateAccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -98,6 +99,7 @@ public class CandidateAuthController {
 
     @PostMapping("/logout")
     @Operation(summary = "Encerra a sessão atual")
+    @SecurityRequirement(name = "CandidateSession")
     public ResponseEntity<Void> logout(HttpServletRequest request) {
         SecurityContextHolder.clearContext();
         if (request.getSession(false) != null) {

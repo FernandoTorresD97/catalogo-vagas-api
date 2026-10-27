@@ -14,10 +14,17 @@ import org.springframework.context.annotation.Configuration;
         in = SecuritySchemeIn.HEADER,
         paramName = "X-Admin-Key"
 )
+@SecurityScheme(
+        name = "CandidateSession",
+        type = SecuritySchemeType.APIKEY,
+        in = SecuritySchemeIn.COOKIE,
+        paramName = "JSESSIONID",
+        description = "Sessão de candidato iniciada em POST /api/v1/auth/login. POSTs autenticados também exigem o token CSRF obtido em GET /api/v1/auth/csrf."
+)
 @OpenAPIDefinition(info = @Info(
         title = "Catálogo de Vagas API",
         version = "v1",
-        description = "API de consulta de vagas com filtros combináveis e paginação."
+        description = "API de consulta de vagas com filtros combináveis, paginação, autenticação de candidatos e registro de interesse."
 ))
 public class OpenApiConfiguration {
 }
