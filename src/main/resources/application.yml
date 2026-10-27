@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: catalogo-vagas-api
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:vagas_catalogo}
+    username: ${DB_USER:vagas}
+    password: ${DB_PASSWORD:vagas}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    distribution:
+      percentiles:
+        http.server.requests: 0.5,0.95,0.99
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+catalog:
+  admin:
+    api-key: ${ADMIN_API_KEY:}
+

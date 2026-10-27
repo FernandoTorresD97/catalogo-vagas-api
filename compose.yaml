@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: catalogo-vagas-postgres
+    environment:
+      POSTGRES_DB: vagas_catalogo
+      POSTGRES_USER: vagas
+      POSTGRES_PASSWORD: vagas
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - catalogo-vagas-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vagas -d vagas_catalogo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: catalogo-vagas-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - catalogo-vagas-redis:/data
+
+volumes:
+  catalogo-vagas-postgres:
+  catalogo-vagas-redis:
