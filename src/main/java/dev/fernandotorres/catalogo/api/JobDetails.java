@@ -20,6 +20,7 @@ public record JobDetails(
         BigDecimal salaryMin,
         BigDecimal salaryMax,
         Instant publishedAt,
-        List<String> technologies
+        List<String> technologies,
+        String applicationUrl
 ) {
 }

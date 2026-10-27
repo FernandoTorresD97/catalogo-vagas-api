@@ -135,7 +135,7 @@ public class JobCatalogService {
         return new JobDetails(
                 job.getId(), job.getTitle(), job.getCompany(), job.getSummary(), job.getDescription(),
                 job.getCity(), job.getState(), job.getWorkMode(), job.getContractType(), job.getSalaryMin(),
-                job.getSalaryMax(), job.getPublishedAt(), sortedTechnologies(job)
+                job.getSalaryMax(), job.getPublishedAt(), sortedTechnologies(job), job.getApplicationUrl()
         );
     }
 

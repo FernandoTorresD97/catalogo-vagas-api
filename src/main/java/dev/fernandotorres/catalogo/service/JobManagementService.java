@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
@@ -32,10 +33,12 @@ public class JobManagementService {
     @Transactional
     public JobDetails create(JobUpsertRequest request) {
         validateSalaryRange(request.salaryMin(), request.salaryMax());
+        validateApplicationUrl(request.applicationUrl());
         var job = new JobPosting(
                 request.title(), request.company(), request.summary(), request.description(), request.city(),
                 request.state(), request.workMode(), request.contractType(), request.salaryMin(), request.salaryMax(),
-                request.publishedAt() == null ? Instant.now() : request.publishedAt(), request.technologies()
+                request.publishedAt() == null ? Instant.now() : request.publishedAt(), request.technologies(),
+                request.applicationUrl()
         );
         JobPosting saved = repository.save(job);
         eventPublisher.publishEvent(new JobPostingChangedEvent(saved.getId(), null, JobSearchSnapshot.from(saved)));
@@ -45,12 +48,14 @@ public class JobManagementService {
     @Transactional
     public JobDetails update(long id, JobUpsertRequest request) {
         validateSalaryRange(request.salaryMin(), request.salaryMax());
+        validateApplicationUrl(request.applicationUrl());
         JobPosting job = findOrThrow(id);
         JobSearchSnapshot previous = JobSearchSnapshot.from(job);
         job.updateDetails(
                 request.title(), request.company(), request.summary(), request.description(), request.city(),
                 request.state(), request.workMode(), request.contractType(), request.salaryMin(), request.salaryMax(),
-                request.publishedAt() == null ? job.getPublishedAt() : request.publishedAt(), request.technologies()
+                request.publishedAt() == null ? job.getPublishedAt() : request.publishedAt(), request.technologies(),
+                request.applicationUrl()
         );
         JobPosting saved = repository.save(job);
         eventPublisher.publishEvent(new JobPostingChangedEvent(saved.getId(), previous, JobSearchSnapshot.from(saved)));
@@ -76,12 +81,24 @@ public class JobManagementService {
         }
     }
 
+    private void validateApplicationUrl(String value) {
+        if (value == null || value.isBlank()) return;
+        try {
+            URI uri = URI.create(value.trim());
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null) {
+                throw new IllegalArgumentException("URL deve ser HTTPS e conter um host válido");
+            }
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(BAD_REQUEST, "applicationUrl deve ser uma URL HTTPS válida", exception);
+        }
+    }
+
     private JobDetails toDetails(JobPosting job) {
         return new JobDetails(
                 job.getId(), job.getTitle(), job.getCompany(), job.getSummary(), job.getDescription(),
                 job.getCity(), job.getState(), job.getWorkMode(), job.getContractType(), job.getSalaryMin(),
                 job.getSalaryMax(), job.getPublishedAt(), job.getTechnologies().stream()
-                .sorted(String.CASE_INSENSITIVE_ORDER).toList()
+                .sorted(String.CASE_INSENSITIVE_ORDER).toList(), job.getApplicationUrl()
         );
     }
 }

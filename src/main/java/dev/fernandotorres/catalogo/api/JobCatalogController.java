@@ -3,6 +3,8 @@ package dev.fernandotorres.catalogo.api;
 import dev.fernandotorres.catalogo.domain.ContractType;
 import dev.fernandotorres.catalogo.domain.WorkMode;
 import dev.fernandotorres.catalogo.service.JobCatalogService;
+import dev.fernandotorres.catalogo.service.JobEngagementService;
+import dev.fernandotorres.catalogo.domain.CandidateAccount;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,6 +19,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.math.BigDecimal;
 
@@ -27,9 +34,11 @@ import java.math.BigDecimal;
 public class JobCatalogController {
 
     private final JobCatalogService service;
+    private final JobEngagementService engagement;
 
-    public JobCatalogController(JobCatalogService service) {
+    public JobCatalogController(JobCatalogService service, JobEngagementService engagement) {
         this.service = service;
+        this.engagement = engagement;
     }
 
     @GetMapping
@@ -75,5 +84,26 @@ public class JobCatalogController {
     @Operation(summary = "Consulta os detalhes de uma vaga")
     public JobDetails findById(@PathVariable @Min(1) long id) {
         return service.findById(id);
+    }
+
+    @GetMapping("/{id}/apply")
+    @Operation(summary = "Registra o clique e redireciona para a candidatura externa")
+    public ResponseEntity<Void> apply(@PathVariable @Min(1) long id) {
+        String url = engagement.recordClickAndGetUrl(id);
+        return ResponseEntity.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, url).build();
+    }
+
+    @GetMapping("/{id}/engagement")
+    @Operation(summary = "Consulta cliques e candidaturas informadas por candidatos")
+    public JobEngagementResponse engagement(@PathVariable @Min(1) long id,
+                                           @AuthenticationPrincipal CandidateAccount candidate) {
+        return engagement.stats(id, candidate == null ? null : candidate.getId());
+    }
+
+    @PostMapping("/{id}/applications")
+    @Operation(summary = "Informa que o candidato já se candidatou à vaga")
+    public JobEngagementResponse reportApplication(@PathVariable @Min(1) long id,
+                                                  @AuthenticationPrincipal CandidateAccount candidate) {
+        return engagement.reportApplication(id, candidate.getUsername());
     }
 }

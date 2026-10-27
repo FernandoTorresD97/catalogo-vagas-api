@@ -59,6 +59,9 @@ public class JobPosting {
     @Column(name = "salary_max", precision = 12, scale = 2)
     private BigDecimal salaryMax;
 
+    @Column(name = "application_url", length = 2048)
+    private String applicationUrl;
+
     @Column(name = "published_at", nullable = false)
     private Instant publishedAt;
 
@@ -85,10 +88,11 @@ public class JobPosting {
             BigDecimal salaryMin,
             BigDecimal salaryMax,
             Instant publishedAt,
-            Set<String> technologies
+            Set<String> technologies,
+            String applicationUrl
     ) {
         updateDetails(title, company, summary, description, city, state, workMode, contractType,
-                salaryMin, salaryMax, publishedAt, technologies);
+                salaryMin, salaryMax, publishedAt, technologies, applicationUrl);
         this.active = true;
     }
 
@@ -104,7 +108,8 @@ public class JobPosting {
             BigDecimal salaryMin,
             BigDecimal salaryMax,
             Instant publishedAt,
-            Set<String> technologies
+            Set<String> technologies,
+            String applicationUrl
     ) {
         this.title = title.trim();
         this.company = company.trim();
@@ -116,6 +121,7 @@ public class JobPosting {
         this.contractType = contractType;
         this.salaryMin = salaryMin;
         this.salaryMax = salaryMax;
+        this.applicationUrl = applicationUrl == null || applicationUrl.isBlank() ? null : applicationUrl.trim();
         this.publishedAt = publishedAt;
         this.technologies.clear();
         technologies.stream().map(String::trim).filter(value -> !value.isBlank()).forEach(this.technologies::add);
@@ -167,6 +173,10 @@ public class JobPosting {
 
     public BigDecimal getSalaryMax() {
         return salaryMax;
+    }
+
+    public String getApplicationUrl() {
+        return applicationUrl;
     }
 
     public Instant getPublishedAt() {

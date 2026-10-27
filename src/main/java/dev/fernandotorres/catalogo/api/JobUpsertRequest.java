@@ -23,6 +23,7 @@ public record JobUpsertRequest(
         @DecimalMin("0.00") BigDecimal salaryMin,
         @DecimalMin("0.00") BigDecimal salaryMax,
         Instant publishedAt,
-        @NotNull @Size(min = 1, max = 20) Set<@NotBlank @Size(max = 80) String> technologies
+        @NotNull @Size(min = 1, max = 20) Set<@NotBlank @Size(max = 80) String> technologies,
+        @Size(max = 2048) String applicationUrl
 ) {
 }
